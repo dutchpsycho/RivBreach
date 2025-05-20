@@ -1,4 +1,11 @@
-### ActiveBreach SuperSet
+# ActiveBreach SuperSet
+
+### ActiveBreach or RivBreach?
+
+- Implants, beacons, malware? > **RivBreach**
+- Injection, game cheats, EDR software? > **ActiveBreach**
+
+### Overview
 
 I'll add proper documentation eventually but here's the essentials:
 

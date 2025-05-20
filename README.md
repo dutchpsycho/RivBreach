@@ -28,3 +28,9 @@ I'll add proper documentation eventually but here's the essentials:
 
 ### Is ActiveBreach finished?
 - No
+
+## License
+
+**Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)**  
+
+[Full License](https://creativecommons.org/licenses/by-nc/4.0/)

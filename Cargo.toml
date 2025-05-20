@@ -1,0 +1,35 @@
+[package]
+name = "rivbreach"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+once_cell = "1.21.1"
+lazy_static = "1.5.0"
+rustc-hash = "2.1.1"
+winapi = { version = "0.3.9", features = [
+    "ntdef", "winbase", "minwindef", "handleapi", "winnt",
+    "sysinfoapi", "fileapi", "processthreadsapi", "memoryapi",
+    "synchapi", "errhandlingapi", "libloaderapi", "threadpoolapiset", "psapi"
+] }
+
+[lib]
+name = "rivbreach"
+path = "Infra/dll.rs"
+crate-type = ["cdylib"]
+
+[[bin]]
+name = "rivbench"
+path = "Infra/mark.rs"
+
+[features]
+default = []
+
+[profile.release]
+opt-level = "z"
+lto = "thin"
+strip = "symbols"
+codegen-units = 1
+debug = false
+panic = "abort"
+incremental = false

@@ -10,7 +10,7 @@
 I'll add proper documentation eventually but here's the essentials:
 
 * RivBreach contains zero strings on release builds, all errors fault through flags (see code).
-* This is much faster than **ActiveBreach**, we no longer use a single dispatcher thread and complex spinlock routines.
+* This near matches native syscall execution speed.
 * **ActiveBreach** executes syscalls from RWX memory outside of `ntdll.dll` bounds, > EDR flag (check callstack, unsigned syscall),
 * The fix? Do essentially what my [Sierra Framework](https://github.com/dutchpsycho/Sierra-Hooking-Framework) does, but on a much larger more sophisticated scale.
 * Parse ntdll from memory (Don't trigger Ps callbacks) > Locate exports syscalls via bytes (Don't expose `ntdll.dll` string) > filter syscalls, create stubs pointing to their exact syscall instructions, skipping any hooks that on them.

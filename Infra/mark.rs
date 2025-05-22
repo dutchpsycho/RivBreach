@@ -3,7 +3,6 @@
 
 pub mod internal;
 
-use crate::internal::stub::initialize_syscall_maps;
 use crate::internal::dispatch::{rivspir, dispatch_syscall};
 use std::time::Instant;
 use winapi::um::{

@@ -5,15 +5,7 @@ use std::{
 
 use winapi::um::winnt::{IMAGE_DOS_HEADER, IMAGE_EXPORT_DIRECTORY, IMAGE_NT_HEADERS};
 
-/// debug-print macro for conditional logging during dev/debug mode
-macro_rules! printdev {
-    ($($arg:tt)*) => {
-        #[cfg(debug_assertions)]
-        {
-            println!("[DBG] {}", format!($($arg)*));
-        }
-    }
-}
+use crate::printdev;
 
 /// Internal mirror of Windows `UNICODE_STRING` for LDR walking
 #[repr(C)]

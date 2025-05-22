@@ -9,7 +9,7 @@ use winapi::shared::minwindef::{BOOL, DWORD, HINSTANCE, LPVOID, TRUE};
 mod internal;
 
 use internal::dispatch::{rivspir, dispatch_syscall};
-use internal::stub::initialize_syscall_maps;
+use internal::stub::init_maps;
 
 /// TLS callback section stub. Runs before `DllMain` on DLL load.
 ///

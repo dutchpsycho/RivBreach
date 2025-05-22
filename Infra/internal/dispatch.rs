@@ -1,14 +1,11 @@
-use crate::internal::stub::{allocate_shadow_stack, fetch_or_create_trampoline, resolve_syscall_stub, initialize_syscall_maps};
+use crate::internal::stub::{allocate_shadow_stack, fetch_or_create_trampoline, resolve_syscall_stub, init_maps};
+use crate::internal::diagnostics::*;
 
 /// Maximum number of register-passed arguments for x64 Windows.
 /// RCX, RDX, R8, and R9 can be used directly — anything beyond is stack-pushed.
 pub const MAX_REGISTER_ARGS: usize = 4;
 
 /// RIV-specific status codes returned via `Result<_, u64>`
-pub const RIV_STATUS_OK: u64                = 0x0000000000000000;
-pub const RIV_STATUS_TOO_MANY_ARGS: u64     = 0xDEAD000000000001;
-pub const RIV_STATUS_UNKNOWN_SYSCALL: u64   = 0xDEAD000000000002;
-pub const RIV_STATUS_SHADOW_ALLOC_FAIL: u64 = 0xDEAD000000000003;
 
 /// Entry point: Initializes RivBreach internal syscall state + map,
 /// and spins up a passive background thread (RIVSPIR thread).
@@ -18,7 +15,7 @@ pub const RIV_STATUS_SHADOW_ALLOC_FAIL: u64 = 0xDEAD000000000003;
 /// - Must be invoked before calling `dispatch_syscall()`.
 #[inline(always)]
 pub unsafe fn rivspir() -> Result<(), u64> {
-    initialize_syscall_maps()?;
+    init_maps()?;
 
     let _ = std::thread::Builder::new()
         .spawn(|| {
@@ -51,7 +48,7 @@ pub unsafe fn rivspir() -> Result<(), u64> {
 /// - Internal syscall maps must be initialized (`rivspir()`).
 /// - Does not validate syscall safety or ABI compatibility.
 #[inline(always)]
-pub unsafe fn dispatch_syscall(name: &str, args: &[u64]) -> Result<u64, u64> {
+pub unsafe fn dispatch_syscall(name: &str, args: &[u64]) -> Result<u64, u32> {
     if args.len() > 16 {
         #[cfg(debug_assertions)]
         {

@@ -281,7 +281,7 @@ unsafe fn copy_trampoline_sse(src: *const u8, dst: *mut u8, len: usize) {
 /// - `RIV_ERR_NTDLL_BASE_FAIL` if `ntdll_base()` fails.
 /// - `RIV_ERR_EXPORT_SCAN_FAIL` if no valid syscall exports are found.
 #[inline(always)]
-pub unsafe fn initialize_syscall_maps() -> Result<(), u64> {
+pub unsafe fn init_maps() -> Result<(), u64> {
     printdev!("Locating ntdll");
     let base = ntdll_base().ok_or(RIV_ERR_NTDLL_BASE_FAIL)?;
     let exports = get_syscall_exports(base);

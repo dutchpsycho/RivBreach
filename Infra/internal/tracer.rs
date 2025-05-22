@@ -9,15 +9,7 @@ use std::{
     os::windows::ffi::OsStringExt,
 };
 
-/// Debug-only macro to emit trace output at runtime.
-macro_rules! dev {
-    ($($arg:tt)*) => {
-        #[cfg(debug_assertions)]
-        {
-            println!("[DBG] {}", format!($($arg)*));
-        }
-    };
-}
+use crate::printdev;
 
 /// Traces a syscall invocation with contextual info about memory origin and stack state.
 ///
@@ -96,7 +88,7 @@ pub unsafe fn trace_syscall(name: &str, syscall: *const u8) {
     let ret_mod = module_of(ret).unwrap_or_else(|| "<unknown>".into());
     let rip_mod = module_of(rip).unwrap_or_else(|| "<unknown>".into());
 
-    dev!(
+    printdev!(
         "syscall: {name}\n\
          ├── stub:   {:#018X} ({})\n\
          ├── return: {:#018X} ({})\n\

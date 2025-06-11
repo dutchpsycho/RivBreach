@@ -4,87 +4,198 @@
 pub mod internal;
 
 use crate::internal::dispatch::{rivspir, dispatch_syscall};
-use std::time::Instant;
-use winapi::um::{
-    processthreadsapi::GetCurrentProcess,
-    winnt::MEMORY_BASIC_INFORMATION,
-};
+use internal::diagnostics::RIVSPIR_FAILED_UNKNOWN;
 
-/// Entry point for RivBreach syscall benchmarking executable.
-///
-/// Demonstrates:
-/// - Manual syscall invocation via `dispatch_syscall`
-/// - Shadow stack allocation and trampoline execution
-/// - Timing comparison for indirect syscall dispatch
-///
-/// Performs two benchmarked syscalls:
-/// - `NtQueryVirtualMemory` on the current process (to introspect main address)
-/// - `NtWriteVirtualMemory` to patch a local value in memory
-fn main() {
-    unsafe {
-        // Initialize trampoline maps and spin dispatcher thread
-        match rivspir() {
-            Ok(_) => { }
-            Err(e) => {
+use std::time::{Duration, Instant};
+use std::panic::{catch_unwind, AssertUnwindSafe};
+
+use winapi::shared::basetsd::SIZE_T;
+use winapi::um::processthreadsapi::GetCurrentProcess;
+use winapi::um::winnt::MEMORY_BASIC_INFORMATION;
+use winapi::shared::ntdef::PVOID;
+use winapi::um::winnt::HANDLE;
+
+
+extern "system" {
+    fn NtQueryVirtualMemory(
+        ProcessHandle: HANDLE,
+        BaseAddress: PVOID,
+        MemoryInformationClass: u32,
+        MemoryInformation: PVOID,
+        MemoryInformationLength: SIZE_T,
+        ReturnLength: *mut SIZE_T,
+    ) -> i32; // NTSTATUS
+
+    fn NtWriteVirtualMemory(
+        ProcessHandle: HANDLE,
+        BaseAddress: PVOID,
+        Buffer: PVOID,
+        NumberOfBytesToWrite: SIZE_T,
+        NumberOfBytesWritten: *mut SIZE_T,
+    ) -> i32; // NTSTATUS
+}
+
+#[cfg(windows)]
+#[link_section = ".CRT$XLB"]
+#[used]
+pub static TLS_CALLBACK: extern "C" fn(*mut u8, u32, *mut u8) = tls_callback;
+
+#[cfg(windows)]
+#[no_mangle]
+pub extern "C" fn tls_callback(_dll_handle: *mut u8, reason: u32, _reserved: *mut u8) {
+    const DLL_PROCESS_ATTACH: u32 = 1;
+    if reason == DLL_PROCESS_ATTACH {
+        unsafe {
+            if let Err(_) = rivspir() {
                 #[cfg(debug_assertions)]
-                eprintln!("[!] rivspir failed: 0x{:X}", e);
+                {
+                    eprintln!("[tls] rivspir() failed: 0x{:08X}", RIVSPIR_FAILED_UNKNOWN);
+                }
+            }
+        }
+    }
+}
+
+
+fn avg_duration<F: FnMut()>(mut f: F, iterations: usize) -> Duration {
+    let mut total: Duration = Duration::ZERO;
+
+    for _ in 0..iterations {
+        let start = Instant::now();
+
+        let _ = catch_unwind(AssertUnwindSafe(&mut f)); // swallow panic
+
+        total += start.elapsed();
+    }
+
+    total / iterations as u32
+}
+
+fn main() {
+    const ITERS: usize = 1000000;
+
+    unsafe {
+
+        let process = GetCurrentProcess();
+        let addr = main as *const () as usize as PVOID;
+
+        let mut mbi: MEMORY_BASIC_INFORMATION = std::mem::zeroed();
+        let mut retlen: SIZE_T = 0;
+
+        let mut target: u32 = 0xDEADBEEF;
+        let data: u32 = 0xCAFEBABE;
+        let mut written: SIZE_T = 0;
+
+        let native_query = || {
+            let mut mbi = std::mem::zeroed::<MEMORY_BASIC_INFORMATION>();
+            let mut retlen = 0usize;
+            let _ = NtQueryVirtualMemory(
+                process,
+                addr,
+                0,
+                &mut mbi as *mut _ as PVOID,
+                std::mem::size_of::<MEMORY_BASIC_INFORMATION>() as SIZE_T,
+                &mut retlen as *mut _,
+            );
+        };
+
+        let riv_query = || {
+            let mut mbi = std::mem::zeroed::<MEMORY_BASIC_INFORMATION>();
+            let mut retlen = 0usize;
+            let result = dispatch_syscall(
+                "NtQueryVirtualMemory",
+                &[
+                    process as usize as u64,
+                    addr as u64,
+                    0,
+                    &mut mbi as *mut _ as u64,
+                    std::mem::size_of::<MEMORY_BASIC_INFORMATION>() as u64,
+                    &mut retlen as *mut _ as u64,
+                ],
+            );
+
+            if let Err(code) = result {
+                eprintln!("[!] RB_QUERY syscall failed: 0x{:08X}", code);
+            }
+        };
+
+        let native_write = || {
+            let mut target = 0xDEADBEEF_u32;
+            let data = 0xCAFEBABE_u32;
+            let mut written = 0usize;
+            let _ = NtWriteVirtualMemory(
+                process,
+                &mut target as *mut _ as PVOID,
+                &data as *const _ as PVOID,
+                std::mem::size_of::<u32>() as SIZE_T,
+                &mut written as *mut _,
+            );
+        };
+
+        let riv_write = || {
+            let _ = dispatch_syscall(
+                "NtWriteVirtualMemory",
+                &[
+                    process as usize as u64,
+                    &mut target as *mut _ as u64,
+                    &data as *const _ as u64,
+                    std::mem::size_of::<u32>() as u64,
+                    &mut written as *mut _ as u64,
+                ],
+            );
+        };
+
+        let native_q_time = avg_duration(native_query, ITERS);
+        let riv_q_time    = avg_duration(riv_query,    ITERS);
+        let native_w_time = avg_duration(native_write, ITERS);
+        let riv_w_time    = avg_duration(riv_write,    ITERS);
+
+        let nq_status = NtQueryVirtualMemory(
+            process,
+            addr,
+            0,
+            &mut mbi as *mut _ as PVOID,
+            std::mem::size_of::<MEMORY_BASIC_INFORMATION>() as SIZE_T,
+            &mut retlen as *mut _,
+        );
+
+        let nw_status = NtWriteVirtualMemory(
+            process,
+            &mut target as *mut _ as PVOID,
+            &data as *const _ as PVOID,
+            std::mem::size_of::<u32>() as SIZE_T,
+            &mut written as *mut _,
+        );
+
+        fn overhead(native: Duration, riv: Duration) -> f64 {
+            let n = native.as_nanos() as f64;
+            let r = riv.as_nanos() as f64;
+
+            if n == 0.0 {
+                0.0
+            } else {
+                ((r - n) / n) * 100.0
             }
         }
 
-        let process = GetCurrentProcess();
-        let addr = main as *const () as u64;
-
-        // Prepare buffer for NtQueryVirtualMemory
-        let mut mbi: MEMORY_BASIC_INFORMATION = std::mem::zeroed();
-        let mut query_retlen: usize = 0;
-
-        let start_q = Instant::now();
-        let query_status = dispatch_syscall(
-            "NtQueryVirtualMemory",
-            &[
-                process as u64,
-                addr,
-                0, // MemoryBasicInformation
-                &mut mbi as *mut _ as u64,
-                std::mem::size_of::<MEMORY_BASIC_INFORMATION>() as u64,
-                &mut query_retlen as *mut _ as u64,
-            ],
-        ).unwrap_or(0);
-        let query_elapsed = start_q.elapsed();
-
-        // Prepare buffer for NtWriteVirtualMemory
-        let mut target: u32 = 0xDEADBEEF;
-        let data: u32 = 0xCAFEBABE;
-        let mut bytes_written: usize = 0;
-
-        let start_w = Instant::now();
-        let write_status = dispatch_syscall(
-            "NtWriteVirtualMemory",
-            &[
-                process as u64,
-                &mut target as *mut _ as u64,
-                &data as *const _ as u64,
-                std::mem::size_of::<u32>() as u64,
-                &mut bytes_written as *mut _ as u64,
-            ],
-        ).unwrap_or(0);
-        let write_elapsed = start_w.elapsed();
-
-        // Output benchmark results
-        println!("================= SYSCALL BENCH =================");
+        println!("====== Syscall Bench ({} reps) ======", ITERS);
         println!("[NtQueryVirtualMemory]");
-        println!("  → NTSTATUS         : 0x{:08X}", query_status as u32);
-        println!("  → Return Length    : {}", query_retlen);
-        println!("  → Region Base      : {:p}", mbi.BaseAddress);
-        println!("  → Elapsed Time     : {:?}", query_elapsed);
+        println!("  → NT avg time     : {:?}", native_q_time);
+        println!("  → RB avg time     : {:?}", riv_q_time);
+        println!("  → Overhead        : {:.2}%", overhead(native_q_time, riv_q_time));
+        println!("  → NTSTATUS NT     : 0x{:08X}", nq_status as u32);
+        println!("  → NTSTATUS RB     : 0x{:08X}", 0);
+
         println!();
 
         println!("[NtWriteVirtualMemory]");
-        println!("  → NTSTATUS         : 0x{:08X}", write_status as u32);
-        println!("  → Bytes Written    : {}", bytes_written);
-        println!("  → Memory Value     : 0x{:08X}", target);
-        println!("  → Expected Value   : 0x{:08X}", data);
-        println!("  → Elapsed Time     : {:?}", write_elapsed);
-        println!("=================================================");
+        println!("  → NT avg time     : {:?}", native_w_time);
+        println!("  → RB avg time     : {:?}", riv_w_time);
+        println!("  → Overhead        : {:.2}%", overhead(native_w_time, riv_w_time));
+        println!("  → Bytes written   : {}", written);
+        println!("  → Mem value final : 0x{:08X}", target);
+        println!("  → NTSTATUS NT     : 0x{:08X}", nw_status as u32);
+        println!("  → NTSTATUS RB     : 0x{:08X}", 0);
+        println!("======================================");        
     }
 }

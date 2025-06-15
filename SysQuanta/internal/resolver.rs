@@ -188,13 +188,13 @@ static SHADOW_MAP: StaticOption<FxHashMap<&'static str, usize>> = StaticOption(U
 /// - `SHADOW_MAP`: shadow copy used to detect tampering
 ///
 /// # Errors
-/// - Returns [`RIV_ERR_NTDLL_BASE_FAIL`] if `ntdll.dll` isn't found.
-/// - Returns [`RIV_ERR_EXPORT_SCAN_FAIL`] if no valid syscall exports are present.
+/// - Returns [`QUANTA_ERR_NTDLL_BASE_FAIL`] if `ntdll.dll` isn't found.
+/// - Returns [`QUANTA_ERR_EXPORT_SCAN_FAIL`] if no valid syscall exports are present.
 pub unsafe fn init_maps() -> Result<(), u32> {
-    let base = ntdll_base().ok_or(RIV_ERR_NTDLL_BASE_FAIL)?;
+    let base = ntdll_base().ok_or(QUANTA_ERR_NTDLL_BASE_FAIL)?;
     let exports = get_syscall_exports(base);
     if exports.is_empty() {
-        return Err(RIV_ERR_EXPORT_SCAN_FAIL);
+        return Err(QUANTA_ERR_EXPORT_SCAN_FAIL);
     }
 
     let mut map = FxHashMap::with_capacity_and_hasher(exports.len(), FxBuildHasher::default());

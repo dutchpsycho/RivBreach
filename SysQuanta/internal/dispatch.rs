@@ -1,7 +1,7 @@
-//! Syscall trampoline dispatcher for RivBreach.
+//! Syscall trampoline dispatcher for Quanta.
 //!
 //! Provides a safe API for:
-//! - Initializing syscall resolver state (`rivspir()`)
+//! - Initializing syscall resolver state (`sysquanta_start()`)
 //! - Executing native NT syscalls with up to 16 arguments (`dispatch_syscall()`)
 //!
 //! Uses internal trampoline infrastructure and TLS shadow stacks for stealthy execution.
@@ -9,7 +9,7 @@
 use crate::internal::{
     allocator::allocate_shadow_stack,
     resolver::{init_maps, resolve_syscall_stub},
-    trampoline::fetch_or_create_trampoline,
+    bridge::fetch_or_create_bridge,
     diagnostics::*,
 };
 
@@ -34,16 +34,16 @@ pub const MAX_REGISTER_ARGS: usize = 4;
 /// - Not thread-safe unless externally synchronized.
 ///
 /// # Errors
-/// - [`RIV_ERR_NTDLL_BASE_FAIL`]: ntdll could not be found
-/// - [`RIV_ERR_EXPORT_SCAN_FAIL`]: no syscall exports found
+/// - [`QUANTA_ERR_NTDLL_BASE_FAIL`]: ntdll could not be found
+/// - [`QUANTA_ERR_EXPORT_SCAN_FAIL`]: no syscall exports found
 #[inline(always)]
-pub unsafe fn rivspir() -> Result<(), u64> {
+pub unsafe fn sysqunata_start() -> Result<(), u64> {
     init_maps()?;
 
     let _ = std::thread::Builder::new()
         .spawn(|| {
             #[cfg(debug_assertions)]
-            eprintln!("[DBG] rivbreach thread spinning");
+            eprintln!("[DBG] SysQuanta thread spinning");
 
             loop {
                 std::thread::park(); // passive stub thread (not used actively)
@@ -67,8 +67,8 @@ pub unsafe fn rivspir() -> Result<(), u64> {
 /// - `args`: Slice of up to 16 `u64` arguments
 ///
 /// # Returns
-/// - `Ok(retval)` → if syscall succeeds or executes successfully
-/// - `Err(status)` → if syscall dispatch failed (trampoline missing, too many args, etc.)
+/// - `Ok(retval)` -> if syscall succeeds or executes successfully
+/// - `Err(status)` -> if syscall dispatch failed (trampoline missing, too many args, etc.)
 ///
 /// # Example
 /// ```ignore
@@ -79,7 +79,7 @@ pub unsafe fn rivspir() -> Result<(), u64> {
 /// ```
 ///
 /// # Safety
-/// - Must be called only after [`rivspir()`] has been successfully invoked
+/// - Must be called only after [`sysquanta_start()`] has been successfully invoked
 /// - Caller must ensure syscall signature and arguments are correct
 /// - Trampolines operate in RWX memory with custom stack manipulation
 #[inline(always)]
@@ -87,7 +87,7 @@ pub unsafe fn dispatch_syscall(name: &str, args: &[u64]) -> Result<u64, u32> {
     if args.len() > 16 {
         #[cfg(debug_assertions)]
         eprintln!("[DBG] too many args passed to syscall `{}`", name);
-        return Err(RIV_STATUS_TOO_MANY_ARGS);
+        return Err(QUANTA_STATUS_TOO_MANY_ARGS);
     }
 
     // Leak syscall name to get static lifetime for caching
@@ -98,20 +98,20 @@ pub unsafe fn dispatch_syscall(name: &str, args: &[u64]) -> Result<u64, u32> {
         None => {
             #[cfg(debug_assertions)]
             eprintln!("[DBG] unknown syscall `{}`", name);
-            return Err(RIV_STATUS_UNKNOWN_SYSCALL);
+            return Err(QUANTA_STATUS_UNKNOWN_SYSCALL);
         }
     };
 
-    let trampoline = fetch_or_create_trampoline(static_name, stub_ptr);
+    let trampoline = fetch_or_create_bridge(static_name, stub_ptr);
     if trampoline.is_null() {
         #[cfg(debug_assertions)]
         eprintln!("[ERR] trampoline for `{}` is NULL", name);
-        return Err(RIV_STATUS_SHADOW_ALLOC_FAIL);
+        return Err(QUANTA_STATUS_SHADOW_ALLOC_FAIL);
     }
 
     let shadow_top = match allocate_shadow_stack() {
         Ok(p) => p as usize,
-        Err(_) => return Err(RIV_STATUS_SHADOW_ALLOC_FAIL),
+        Err(_) => return Err(QUANTA_STATUS_SHADOW_ALLOC_FAIL),
     };
 
     // Build downward-growing shadow stack for args 5..16

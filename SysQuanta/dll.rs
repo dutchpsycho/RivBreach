@@ -8,7 +8,7 @@ use winapi::shared::minwindef::{DWORD, LPVOID};
 
 mod internal;
 
-use internal::dispatch::{rivspir, dispatch_syscall};
+use internal::dispatch::{sysqunata_start, dispatch_syscall};
 use internal::resolver::init_maps;
 use internal::diagnostics::*;
 
@@ -36,7 +36,7 @@ pub static TLS_INIT: unsafe extern "system" fn(LPVOID, DWORD, LPVOID) = TLS_CALL
 /// TLS callback implementation executed by the Windows loader.
 ///
 /// Called with `reason == DLL_PROCESS_ATTACH` when the module is mapped.
-/// Automatically invokes [`rivspir()`] to initialize internal syscall mappings.
+/// Automatically invokes [`quantspir()`] to initialize internal syscall mappings.
 ///
 /// # Arguments
 /// - `_`: Module base (unused)
@@ -49,13 +49,13 @@ pub static TLS_INIT: unsafe extern "system" fn(LPVOID, DWORD, LPVOID) = TLS_CALL
 #[no_mangle]
 unsafe extern "system" fn TLS_CALLBACK_0(_: LPVOID, reason: DWORD, _: LPVOID) {
     if reason == 1 {
-        let _ = rivspir();
+        let _ = sysqunata_start();
     }
 }
 
 /// FFI-safe trampoline for dynamically dispatching NT syscalls from external callers.
 ///
-/// This serves as the exported C ABI interface to RivBreach.
+/// This serves as the exported C ABI interface to SysQuanta.
 /// It resolves a syscall by name, builds a trampoline (if necessary),
 /// sets up a shadow stack, and executes the syscall using manual register + stack prep.
 ///
@@ -69,9 +69,9 @@ unsafe extern "system" fn TLS_CALLBACK_0(_: LPVOID, reason: DWORD, _: LPVOID) {
 ///
 /// | Value                  | Meaning                                |
 /// |------------------------|----------------------------------------|
-/// | `RIVCALL_NULLPTR_OR_OVERFLOW` | Null pointer or `argc > 16`     |
-/// | `RIVCALL_UTF8_FAIL`    | `name` is not valid UTF-8              |
-/// | `RIVCALL_DISPATCH_FAIL`| `dispatch_syscall` returned an error   |
+/// | `QUANTACALL_NULLPTR_OR_OVERFLOW` | Null pointer or `argc > 16`     |
+/// | `QUANTACALL_UTF8_FAIL`    | `name` is not valid UTF-8              |
+/// | `QUANTACALL_DISPATCH_FAIL`| `dispatch_syscall` returned an error   |
 /// | actual value           | syscall return (success)               |
 ///
 /// # Example (C FFI)
@@ -84,21 +84,21 @@ unsafe extern "system" fn TLS_CALLBACK_0(_: LPVOID, reason: DWORD, _: LPVOID) {
 /// - Pointers must be valid and aligned.
 /// - Should be called from a safe thread context (not in signal/SEH handler).
 #[no_mangle]
-pub unsafe extern "C" fn riv_call(name: *const c_char, args: *const u64, argc: usize) -> u64 {
+pub unsafe extern "C" fn quanta_call(name: *const c_char, args: *const u64, argc: usize) -> u64 {
     if name.is_null() || args.is_null() || argc > 16 {
-        return RIVCALL_NULLPTR_OR_OVERFLOW as u64;
+        return QUANTACALL_NULLPTR_OR_OVERFLOW as u64;
     }
 
     let cstr = std::ffi::CStr::from_ptr(name);
     let name_str = match cstr.to_str() {
         Ok(s) => s,
-        Err(_) => return RIVCALL_UTF8_FAIL as u64,
+        Err(_) => return QUANTACALL_UTF8_FAIL as u64,
     };
 
     let args_slice = slice::from_raw_parts(args, argc);
 
     match dispatch_syscall(name_str, args_slice) {
         Ok(val) => val,
-        Err(_)  => RIVCALL_DISPATCH_FAIL as u64,
+        Err(_)  => QUANTACALL_DISPATCH_FAIL as u64,
     }
 }

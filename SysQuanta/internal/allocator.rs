@@ -1,4 +1,4 @@
-//! Low-level memory allocator utilities for RIV trampoline system.
+//! Low-level memory allocator utilities for Quanta trampoline system.
 //!
 //! Includes:
 //! - Executable bump allocator (`Arena`)
@@ -18,6 +18,7 @@ use winapi::{
         winnt::{MEM_COMMIT, MEM_RESERVE, PAGE_NOACCESS, PAGE_EXECUTE_READWRITE, PAGE_READWRITE},
     },
 };
+use crate::internal::diagnostics::QUANTA_ERR_SHADOW_ALLOC;
 
 /// Executable memory arena using bump-pointer allocation.
 ///
@@ -96,7 +97,7 @@ impl ShadowStackAllocator {
         let raw = VirtualAlloc(ptr::null_mut(), total, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE)
             as *mut u8;
         if raw.is_null() {
-            return Err(0xF000_0000_0001); // RIV_ERR_SHADOW_ALLOC
+            return Err(QUANTA_ERR_SHADOW_ALLOC as u64);
         }
 
         let mut old = 0;

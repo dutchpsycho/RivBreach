@@ -3,8 +3,8 @@
 
 pub mod internal;
 
-use crate::internal::dispatch::{rivspir, dispatch_syscall};
-use internal::diagnostics::RIVSPIR_FAILED_UNKNOWN;
+use crate::internal::dispatch::{sysqunata_start, dispatch_syscall};
+use internal::diagnostics::SYSQUANATA_START_UNKNOWN;
 
 use std::time::{Duration, Instant};
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -46,16 +46,15 @@ pub extern "C" fn tls_callback(_dll_handle: *mut u8, reason: u32, _reserved: *mu
     const DLL_PROCESS_ATTACH: u32 = 1;
     if reason == DLL_PROCESS_ATTACH {
         unsafe {
-            if let Err(_) = rivspir() {
+            if let Err(_) = sysqunata_start() {
                 #[cfg(debug_assertions)]
                 {
-                    eprintln!("[tls] rivspir() failed: 0x{:08X}", RIVSPIR_FAILED_UNKNOWN);
+                    eprintln!("[TLS] SysQuanta start () failed: 0x{:08X}", SYSQUANATA_START_UNKNOWN);
                 }
             }
         }
     }
 }
-
 
 fn avg_duration<F: FnMut()>(mut f: F, iterations: usize) -> Duration {
     let mut total: Duration = Duration::ZERO;
@@ -99,7 +98,7 @@ fn main() {
             );
         };
 
-        let riv_query = || {
+        let quanta_query = || {
             let mut mbi = std::mem::zeroed::<MEMORY_BASIC_INFORMATION>();
             let mut retlen = 0usize;
             let result = dispatch_syscall(
@@ -115,7 +114,7 @@ fn main() {
             );
 
             if let Err(code) = result {
-                eprintln!("[!] RB_QUERY syscall failed: 0x{:08X}", code);
+                eprintln!("[!] QA_QUERY syscall failed: 0x{:08X}", code);
             }
         };
 
@@ -132,7 +131,7 @@ fn main() {
             );
         };
 
-        let riv_write = || {
+        let quanta_write = || {
             let _ = dispatch_syscall(
                 "NtWriteVirtualMemory",
                 &[
@@ -146,9 +145,9 @@ fn main() {
         };
 
         let native_q_time = avg_duration(native_query, ITERS);
-        let riv_q_time    = avg_duration(riv_query,    ITERS);
+        let quanta_q_time    = avg_duration(quanta_query,    ITERS);
         let native_w_time = avg_duration(native_write, ITERS);
-        let riv_w_time    = avg_duration(riv_write,    ITERS);
+        let quanta_w_time    = avg_duration(quanta_write,    ITERS);
 
         let nq_status = NtQueryVirtualMemory(
             process,
@@ -167,9 +166,9 @@ fn main() {
             &mut written as *mut _,
         );
 
-        fn overhead(native: Duration, riv: Duration) -> f64 {
+        fn overhead(native: Duration, quanta: Duration) -> f64 {
             let n = native.as_nanos() as f64;
-            let r = riv.as_nanos() as f64;
+            let r = quanta.as_nanos() as f64;
 
             if n == 0.0 {
                 0.0
@@ -181,21 +180,21 @@ fn main() {
         println!("====== Syscall Bench ({} reps) ======", ITERS);
         println!("[NtQueryVirtualMemory]");
         println!("  → NT avg time     : {:?}", native_q_time);
-        println!("  → RB avg time     : {:?}", riv_q_time);
-        println!("  → Overhead        : {:.2}%", overhead(native_q_time, riv_q_time));
+        println!("  → QA avg time     : {:?}", quanta_q_time);
+        println!("  → Overhead        : {:.2}%", overhead(native_q_time, quanta_q_time));
         println!("  → NTSTATUS NT     : 0x{:08X}", nq_status as u32);
-        println!("  → NTSTATUS RB     : 0x{:08X}", 0);
+        println!("  → NTSTATUS QA     : 0x{:08X}", 0);
 
         println!();
 
         println!("[NtWriteVirtualMemory]");
         println!("  → NT avg time     : {:?}", native_w_time);
-        println!("  → RB avg time     : {:?}", riv_w_time);
-        println!("  → Overhead        : {:.2}%", overhead(native_w_time, riv_w_time));
+        println!("  → QA avg time     : {:?}", quanta_w_time);
+        println!("  → Overhead        : {:.2}%", overhead(native_w_time, quanta_w_time));
         println!("  → Bytes written   : {}", written);
         println!("  → Mem value final : 0x{:08X}", target);
         println!("  → NTSTATUS NT     : 0x{:08X}", nw_status as u32);
-        println!("  → NTSTATUS RB     : 0x{:08X}", 0);
+        println!("  → NTSTATUS QA     : 0x{:08X}", 0);
         println!("======================================");        
     }
 }
